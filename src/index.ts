@@ -1,4 +1,4 @@
-import neo4j from 'neo4j-driver'
+import neo4j, { Record } from 'neo4j-driver'
 
 const driver = neo4j.driver(
   'neo4j://localhost:7687',
@@ -19,13 +19,15 @@ class Main {
     try {
       const res = await this.session.run(
         `
-        MATCH (p:Person)-[:ACTED_IN]->(:Movie {title: $title})
-        RETURN p
+        MATCH (a:Actor)-[r:ACTED_IN]->(m:Movie)
+        RETURN a.name
       `,
         { title: 'The Matrix' },
         { timeout: 20000 },
       )
-      const people = res.records[0].get('p')
+      const people = res.records.map((record: Record) => {
+        return record.get('a.name')
+      })
       console.log(people)
     } catch (err) {
       console.error(err)
@@ -35,20 +37,15 @@ class Main {
     }
   }
 
-  async createDataExample() {
+  async createDataExample(
+    cypherCode: string,
+    params?: { [key: string]: string },
+  ) {
     try {
-      const cypher = `
-      MERGE (p:Person {name: $name})
-      MERGE (m: Movie {title: $title})
-      CREATE (p)-[:ACTED_IN]->(m)
-      RETURN p, m`
-
-      const params = { name: 'Rodrigo Santoro', title: 'The Matrix' }
-
       const res = await this.session.executeWrite((tx) =>
-        tx.run(cypher, params),
+        tx.run(cypherCode, params),
       )
-      console.log(res.records[0].get('m'))
+      console.log(res.records)
     } catch (err) {
       console.error(err)
     } finally {
@@ -59,4 +56,21 @@ class Main {
 }
 
 const main = new Main()
-main.verifyConnectivity()
+const cypher = `
+
+MATCH (m:Movie), (a:Actor)
+WHERE m.title = 'The Dark Knight' AND a.name = 'Christian Bale'
+MERGE (a)-[:ACTED_IN]->(m)
+WITH m, a // Pass along the matched nodes
+
+MATCH (m:Movie), (a:Actor)
+WHERE m.title = 'The Shawshank Redemption' AND a.name = 'Morgan Freeman'
+MERGE (a)-[:ACTED_IN]->(m)
+WITH m, a // Pass along the matched nodes
+
+MATCH (m:Movie), (a:Actor)
+WHERE m.title = 'Interstellar' AND a.name = 'Anne Hathaway'
+MERGE (a)-[:ACTED_IN]->(m)
+
+`
+main.createDataExample(cypher)
