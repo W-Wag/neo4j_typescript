@@ -1,4 +1,26 @@
-import neo4j, { Record } from 'neo4j-driver'
+import neo4j, { Node, Relationship, Integer, QueryResult } from 'neo4j-driver'
+import { readActorInRelationActedIn } from './cypher-codes/read-data/read'
+
+interface ActorProperties {
+  name: string
+  birth_year: number
+}
+
+interface MovieProperties {
+  title: string
+  year: number
+  genre: string
+}
+
+interface Actor extends Node<Integer, ActorProperties> {}
+interface Movie extends Node<Integer, MovieProperties> {}
+interface ActedIn extends Relationship<Integer, Record<string, string>> {}
+
+interface ActorActedInMovie {
+  a: Actor
+  r: ActedIn
+  m: Movie
+}
 
 const driver = neo4j.driver(
   'neo4j://localhost:7687',
@@ -15,20 +37,16 @@ class Main {
     await driver.close()
   }
 
-  async runningSample() {
+  async runningSample(cypherCode: string, params?: { [key: string]: string }) {
     try {
-      const res = await this.session.run(
-        `
-        MATCH (a:Actor)-[r:ACTED_IN]->(m:Movie)
-        RETURN a.name
-      `,
-        { title: 'The Matrix' },
-        { timeout: 20000 },
+      const res: QueryResult<ActorActedInMovie> = await this.session.run(
+        cypherCode,
+        params,
       )
-      const people = res.records.map((record: Record) => {
-        return record.get('a.name')
+      const actor = res.records.map((record) => {
+        return record.get('a').properties.name
       })
-      console.log(people)
+      console.log(actor)
     } catch (err) {
       console.error(err)
     } finally {
@@ -43,9 +61,9 @@ class Main {
   ) {
     try {
       const res = await this.session.executeWrite((tx) =>
-        tx.run(cypherCode, params),
+        tx.run<ActorActedInMovie>(cypherCode, params),
       )
-      console.log(res.records)
+      console.log(res.records[0].get('a').properties.name)
     } catch (err) {
       console.error(err)
     } finally {
@@ -56,21 +74,4 @@ class Main {
 }
 
 const main = new Main()
-const cypher = `
-
-MATCH (m:Movie), (a:Actor)
-WHERE m.title = 'The Dark Knight' AND a.name = 'Christian Bale'
-MERGE (a)-[:ACTED_IN]->(m)
-WITH m, a // Pass along the matched nodes
-
-MATCH (m:Movie), (a:Actor)
-WHERE m.title = 'The Shawshank Redemption' AND a.name = 'Morgan Freeman'
-MERGE (a)-[:ACTED_IN]->(m)
-WITH m, a // Pass along the matched nodes
-
-MATCH (m:Movie), (a:Actor)
-WHERE m.title = 'Interstellar' AND a.name = 'Anne Hathaway'
-MERGE (a)-[:ACTED_IN]->(m)
-
-`
-main.createDataExample(cypher)
+main.runningSample(readActorInRelationActedIn)
